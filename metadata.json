@@ -1,0 +1,6 @@
+{
+  "name": "Meeting Minutes Generator",
+  "description": "Generate professional meeting minutes from Fathom recordings or manual transcripts using AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
