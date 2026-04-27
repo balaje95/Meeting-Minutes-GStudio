@@ -15,7 +15,6 @@ import {
   MessageSquare,
   ArrowRight
 } from 'lucide-react';
-import { generateMeetingMinutes } from './lib/gemini';
 
 interface Meeting {
   id: string;
@@ -115,8 +114,13 @@ export default function App() {
       }
       
       if (transcript) {
-        const result = await generateMeetingMinutes(transcript);
-        setMinutes(result || null);
+        const res = await fetch('/api/generate-minutes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript })
+        });
+        const data = await res.json();
+        setMinutes(data.minutes || null);
       }
     } catch (err) {
       console.error('Generation failed', err);
@@ -131,8 +135,13 @@ export default function App() {
     setSelectedMeeting(null);
     setMinutes(null);
     try {
-      const result = await generateMeetingMinutes(manualTranscript);
-      setMinutes(result || null);
+      const res = await fetch('/api/generate-minutes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: manualTranscript })
+      });
+      const data = await res.json();
+      setMinutes(data.minutes || null);
     } catch (err) {
       console.error('Generation failed', err);
     } finally {

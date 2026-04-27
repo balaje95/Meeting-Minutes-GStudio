@@ -4,11 +4,25 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Gemini (Lazy initialization to prevent crashes if key is missing on startup)
+let aiClient: GoogleGenAI | null = null;
+function getAI() {
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error('FATAL: GEMINI_API_KEY is not set in environment variables.');
+    }
+    aiClient = new GoogleGenAI({ apiKey: apiKey || 'MISSING_KEY' });
+  }
+  return aiClient;
+}
 
 async function startServer() {
   const app = express();
@@ -119,7 +133,7 @@ async function startServer() {
 
     // If no token and not in local dev with mock disabled, return mock data for demonstration
     if (!token) {
-      if (process.env.FATHOM_CLIENT_ID) {
+      if (process.env.FATHOM_CLIENT_ID && process.env.FATHOM_CLIENT_ID !== 'YOUR_FATHOM_CLIENT_ID') {
          return res.status(401).json({ error: 'Not authenticated' });
       }
       
@@ -186,13 +200,53 @@ async function startServer() {
     }
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  // AI Generation Route
+  app.post('/api/generate-minutes', async (req, res) => {
+    const { transcript } = req.body;
+    
+    if (!transcript) {
+      return res.status(400).json({ error: 'Transcript is required' });
+    }
+
+    try {
+      const prompt = `You are an expert meeting minutes assistant. 
+Generate professional meeting minutes from the following transcript.
+
+Format the output with the following sections (use clear headings):
+- Title of Key Discussion
+- Summary: A concise overview of the meeting (2-3 paragraphs)
+- Key Takeaways: Bulleted list of the most important points
+- Action Items: Bulleted list of assignments, who's responsible, and deadlines (if mentioned)
+- Decisions Made: Bulleted list of final decisions
+- Next Steps: Brief conclusion on what happens next
+
+Transcript:
+${transcript}`;
+
+      const ai = getAI();
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
+      });
+      const text = result.text || "";
+      
+      res.json({ minutes: text });
+    } catch (error) {
+      console.error('AI Generation Error:', error);
+      res.status(500).json({ error: 'Failed to generate minutes' });
+    }
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  }
+  
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -200,9 +254,14 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-  });
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running at http://localhost:${PORT}`);
+    });
+  }
+
+  return app;
 }
 
-startServer();
+const appPromise = startServer();
+export default appPromise;
